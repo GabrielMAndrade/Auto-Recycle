@@ -251,7 +251,7 @@ def main():
     ).strip() or "0.0.0.0"
 
     port = int(
-        os.getenv("PORT", "8080")
+        os.getenv("PORT", "6776")
     )
 
     uvicorn.run(
