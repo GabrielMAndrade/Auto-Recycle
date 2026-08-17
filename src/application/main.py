@@ -8,21 +8,25 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 
-from src.service.credtu_automation import executar_reciclagem
+from src.service.credtu_automation import (
+    CredtuAutomationError,
+    executar_reciclagem,
+)
 
 
 load_dotenv()
 
 app = FastAPI(
     title="Credtu Auto Reciclagem",
-    version="2.0.0",
+    version="3.0.0",
     description=(
-        "Recebe somente o campaign_id do n8n e retorna "
-        "somente true ou false."
+        "Recebe campaign_id do n8n e devolve "
+        "status estruturado da execução."
     ),
 )
 
-# Impede duas automações Selenium ao mesmo tempo.
+# Como a automação usa Selenium/Chrome, somente uma
+# execução deve acontecer por vez neste processo.
 automation_lock = threading.Lock()
 
 
@@ -30,21 +34,52 @@ def log(mensagem):
     print(str(mensagem), flush=True)
 
 
-def token_valido(authorization: str | None) -> bool:
+def resposta_erro(
+    status: str,
+    stage: str,
+    message: str,
+    error_type: str | None = None,
+    campaign_id: str | None = None,
+):
     """
-    Valida o Bearer Token enviado pelo n8n.
+    Retorno padronizado para o n8n.
 
-    O token esperado fica apenas no .env:
-        N8N_API_TOKEN=...
+    Mantemos HTTP 200 para o node HTTP Request não parar o workflow.
+    O n8n decide pelo campo "ok".
     """
+    body = {
+        "ok": False,
+        "status": status,
+        "stage": stage,
+        "message": message,
+    }
+
+    if error_type:
+        body["error_type"] = error_type
+
+    if campaign_id:
+        body["campaign_id"] = campaign_id
+
+    return JSONResponse(
+        content=body,
+        status_code=200,
+    )
+
+
+def token_valido(
+    authorization: str | None,
+) -> bool:
     esperado = str(
-        os.getenv("N8N_API_TOKEN", "")
+        os.getenv(
+            "N8N_API_TOKEN",
+            "",
+        )
     ).strip()
 
     if not esperado:
         log(
-            "[ERRO API] N8N_API_TOKEN não está "
-            "configurado no .env."
+            "[ERRO API] N8N_API_TOKEN "
+            "não configurado no .env."
         )
         return False
 
@@ -52,12 +87,13 @@ def token_valido(authorization: str | None) -> bool:
 
     if (
         authorization
-        and authorization.lower().startswith("bearer ")
+        and authorization.lower().startswith(
+            "bearer "
+        )
     ):
         recebido = authorization[7:].strip()
 
     if not recebido:
-        log("[ERRO API] Bearer Token não enviado.")
         return False
 
     return secrets.compare_digest(
@@ -68,12 +104,9 @@ def token_valido(authorization: str | None) -> bool:
 
 @app.get("/health")
 def health():
-    """
-    Endpoint apenas para verificar se o serviço está no ar.
-    Não faz parte do fluxo de reciclagem.
-    """
     return {
         "ok": True,
+        "status": "online",
         "busy": automation_lock.locked(),
     }
 
@@ -81,70 +114,101 @@ def health():
 @app.post("/api/recycle")
 async def recycle(
     request: Request,
-    authorization: str | None = Header(default=None),
+    authorization: str | None = Header(
+        default=None
+    ),
 ):
     """
-    CONTRATO N8N -> 3C
+    n8n -> 3C
 
-    Entrada:
-        {
-            "campaign_id": "282391"
-        }
+    {
+        "campaign_id": "282391"
+    }
 
-    O campaign_id deve vir do node n8n:
-        Infos. Campanha -> idCampanha
+    3C -> n8n
 
-    CONTRATO 3C -> N8N
+    SUCESSO:
+    {
+        "ok": true,
+        "status": "success",
+        ...
+    }
 
-    Sucesso:
-        true
-
-    Qualquer erro:
-        false
-
-    Nenhum detalhe interno do Selenium é devolvido ao n8n.
-    Os detalhes ficam somente no log da VPS.
+    ERRO:
+    {
+        "ok": false,
+        "status": "...",
+        "stage": "...",
+        "error_type": "...",
+        "message": "..."
+    }
     """
 
-    # -----------------------------------------------------
-    # 1. AUTORIZAÇÃO
-    # -----------------------------------------------------
+    # =====================================================
+    # 1. TOKEN
+    # =====================================================
 
-    if not token_valido(authorization):
-        return JSONResponse(
-            content=False,
-            status_code=200,
+    if not token_valido(
+        authorization
+    ):
+        log(
+            "[ERRO API] Token inválido "
+            "ou ausente."
         )
 
-    # -----------------------------------------------------
-    # 2. LÊ SOMENTE O campaign_id
-    # -----------------------------------------------------
+        return resposta_erro(
+            status="unauthorized",
+            stage="api_auth",
+            message=(
+                "Token inválido ou ausente."
+            ),
+        )
+
+    # =====================================================
+    # 2. JSON
+    # =====================================================
 
     try:
         body = await request.json()
-    except Exception:
+
+    except Exception as erro:
         log(
-            "[ERRO API] Body inválido. "
-            "Era esperado JSON com campaign_id."
+            "[ERRO API] Body inválido: "
+            f"{type(erro).__name__}: {erro}"
         )
 
-        return JSONResponse(
-            content=False,
-            status_code=200,
+        return resposta_erro(
+            status="invalid_json",
+            stage="api_request",
+            error_type=type(erro).__name__,
+            message=(
+                "Body inválido. "
+                "Era esperado JSON com campaign_id."
+            ),
         )
 
-    if not isinstance(body, dict):
-        log(
-            "[ERRO API] Body precisa ser um objeto JSON."
+    if not isinstance(
+        body,
+        dict,
+    ):
+        return resposta_erro(
+            status="invalid_body",
+            stage="api_request",
+            message=(
+                "O body precisa ser "
+                "um objeto JSON."
+            ),
         )
 
-        return JSONResponse(
-            content=False,
-            status_code=200,
-        )
+    # =====================================================
+    # 3. CAMPAIGN ID
+    # =====================================================
 
     campaign_id = str(
-        body.get("campaign_id", "")
+        body.get(
+            "campaign_id",
+            "",
+        )
     ).strip()
 
     if (
@@ -152,35 +216,47 @@ async def recycle(
         or not campaign_id.isdigit()
     ):
         log(
-            "[ERRO API] campaign_id inválido: "
-            f"{campaign_id!r}"
+            "[ERRO API] campaign_id "
+            f"inválido: {campaign_id!r}"
         )
 
-        return JSONResponse(
-            content=False,
-            status_code=200,
+        return resposta_erro(
+            status="invalid_campaign_id",
+            stage="validation",
+            message=(
+                "campaign_id deve conter "
+                "somente números."
+            ),
+            campaign_id=(
+                campaign_id or None
+            ),
         )
 
-    # -----------------------------------------------------
-    # 3. EVITA EXECUÇÕES SIMULTÂNEAS
-    # -----------------------------------------------------
+    # =====================================================
+    # 4. LOCK
+    # =====================================================
 
     if not automation_lock.acquire(
         blocking=False
     ):
         log(
-            "[ERRO API] Já existe uma reciclagem "
-            "em execução."
+            "[ERRO API] Já existe uma "
+            "reciclagem em execução."
         )
 
-        return JSONResponse(
-            content=False,
-            status_code=200,
+        return resposta_erro(
+            status="busy",
+            stage="queue",
+            message=(
+                "Já existe uma reciclagem "
+                "em execução."
+            ),
+            campaign_id=campaign_id,
         )
 
-    # -----------------------------------------------------
-    # 4. EXECUTA AUTOMAÇÃO CREDTU
-    # -----------------------------------------------------
+    # =====================================================
+    # 5. EXECUTA CREDTU
+    # =====================================================
 
     try:
         log("")
@@ -188,7 +264,8 @@ async def recycle(
             "=============================================="
         )
         log(
-            f"[N8N -> 3C] campaign_id recebido: "
+            f"[N8N -> 3C] "
+            f"campaign_id recebido: "
             f"{campaign_id}"
         )
         log(
@@ -199,46 +276,62 @@ async def recycle(
             campaign_id
         )
 
-        if resultado is True:
-            log(
-                f"[3C -> N8N] Campanha {campaign_id}: "
-                "true"
-            )
-
-            return JSONResponse(
-                content=True,
-                status_code=200,
-            )
-
         log(
-            f"[3C -> N8N] Campanha {campaign_id}: "
-            "false"
+            f"[3C -> N8N] "
+            f"Campanha {campaign_id}: "
+            f"{resultado}"
         )
 
         return JSONResponse(
-            content=False,
+            content=resultado,
             status_code=200,
         )
 
-    except Exception as erro:
-        # O n8n recebe SOMENTE false.
-        # O detalhe fica somente no terminal/journalctl.
+    except CredtuAutomationError as erro:
         log(
-            f"[ERRO AUTOMAÇÃO] Campanha "
-            f"{campaign_id}: "
-            f"{type(erro).__name__}: {erro}"
+            "[ERRO AUTOMAÇÃO] "
+            f"campaign_id={campaign_id} | "
+            f"status={erro.status} | "
+            f"stage={erro.stage} | "
+            f"type={erro.error_type} | "
+            f"message={erro.message}"
         )
 
         traceback.print_exc()
 
+        body = erro.to_dict()
+        body["campaign_id"] = (
+            campaign_id
+        )
+
         log(
-            f"[3C -> N8N] Campanha {campaign_id}: "
-            "false"
+            f"[3C -> N8N] "
+            f"{body}"
         )
 
         return JSONResponse(
-            content=False,
+            content=body,
             status_code=200,
+        )
+
+    except Exception as erro:
+        log(
+            "[ERRO INESPERADO API] "
+            f"{type(erro).__name__}: "
+            f"{erro}"
+        )
+
+        traceback.print_exc()
+
+        return resposta_erro(
+            status="unexpected_error",
+            stage="api_execution",
+            error_type=type(erro).__name__,
+            message=(
+                str(erro)
+                or type(erro).__name__
+            ),
+            campaign_id=campaign_id,
         )
 
     finally:
@@ -247,11 +340,17 @@ async def recycle(
 
 def main():
     host = str(
-        os.getenv("HOST", "0.0.0.0")
+        os.getenv(
+            "HOST",
+            "0.0.0.0",
+        )
     ).strip() or "0.0.0.0"
 
     port = int(
-        os.getenv("PORT", "6776")
+        os.getenv(
+            "PORT",
+            "6776",
+        )
     )
 
     uvicorn.run(

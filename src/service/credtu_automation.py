@@ -17,6 +17,80 @@ from src.utils.helpers import log, tirar_print_debug
 LOGIN_URL = "https://credtuasset.3c.plus/login"
 
 
+class CredtuAutomationError(Exception):
+    """
+    Erro estruturado da automação.
+
+    status:
+        código curto usado pelo n8n.
+
+    stage:
+        etapa exata em que ocorreu a falha.
+
+    error_type:
+        tipo original da exceção do Python/Selenium.
+
+    message:
+        mensagem original do erro.
+    """
+
+    def __init__(
+        self,
+        status: str,
+        stage: str,
+        original_error: Exception,
+    ):
+        self.status = status
+        self.stage = stage
+        self.error_type = type(original_error).__name__
+        self.message = (
+            str(original_error).strip()
+            or self.error_type
+        )
+
+        super().__init__(
+            f"[{status}] {stage}: "
+            f"{self.error_type}: {self.message}"
+        )
+
+    def to_dict(self):
+        return {
+            "ok": False,
+            "status": self.status,
+            "stage": self.stage,
+            "error_type": self.error_type,
+            "message": self.message,
+        }
+
+
+def executar_etapa(
+    status: str,
+    stage: str,
+    funcao,
+    *args,
+    **kwargs,
+):
+    """
+    Executa uma etapa e transforma qualquer exceção
+    em CredtuAutomationError com status e etapa claros.
+    """
+    try:
+        return funcao(
+            *args,
+            **kwargs,
+        )
+
+    except CredtuAutomationError:
+        raise
+
+    except Exception as erro:
+        raise CredtuAutomationError(
+            status=status,
+            stage=stage,
+            original_error=erro,
+        ) from erro
+
+
 # =========================================================
 # XPATHS - LOGIN
 # =========================================================
@@ -563,17 +637,24 @@ def finalizar_reciclagem(driver):
     time.sleep(_sleep_final())
 
 
-def executar_reciclagem(campaign_id: str) -> bool:
+def executar_reciclagem(campaign_id: str) -> dict:
     """
-    Executa toda a reciclagem da campanha.
+    Executa toda a reciclagem e devolve um resultado estruturado.
 
-    Retorno interno:
-        True = todas as etapas foram concluídas.
+    Sucesso:
+        {
+            "ok": True,
+            "status": "success",
+            "campaign_id": "...",
+            "nome_anterior": "...",
+            "novo_nome": "..."
+        }
 
-    Em qualquer erro:
-        levanta a exceção para a API capturar e
-        responder somente false ao n8n.
+    Falha:
+        levanta CredtuAutomationError.
+        A API transforma em JSON para o n8n.
     """
+
     campaign_id = str(
         campaign_id or ""
     ).strip()
@@ -582,12 +663,17 @@ def executar_reciclagem(campaign_id: str) -> bool:
         not campaign_id
         or not campaign_id.isdigit()
     ):
-        raise ValueError(
-            "campaign_id inválido. "
-            "Envie somente o ID numérico da campanha."
+        raise CredtuAutomationError(
+            status="invalid_campaign_id",
+            stage="validation",
+            original_error=ValueError(
+                "campaign_id deve conter somente números."
+            ),
         )
 
     driver = None
+    nome_atual = None
+    novo_nome = None
 
     try:
         log("===================================================")
@@ -597,71 +683,116 @@ def executar_reciclagem(campaign_id: str) -> bool:
         )
         log("===================================================")
 
-        # 1. Abre Chrome
-        driver = criar_driver()
+        # 1. Chrome
+        driver = executar_etapa(
+            "chrome_start_error",
+            "open_chrome",
+            criar_driver,
+        )
 
         # 2. Login
-        fazer_login(driver)
+        executar_etapa(
+            "login_error",
+            "login",
+            fazer_login,
+            driver,
+        )
 
-        # 3. Entra na campanha recebida pelo n8n
-        abrir_campanha(
+        # 3. Campanha
+        executar_etapa(
+            "campaign_open_error",
+            "open_campaign",
+            abrir_campanha,
             driver,
             campaign_id,
         )
 
-        # 4. URA
-        abrir_ura(driver)
-
-        # 5. Abre todas as listas
-        abrir_todas_listas(driver)
-
-        # 6. Pega a lista mais abaixo/mais atual
-        ultima_linha = (
-            clicar_opcoes_da_ultima_lista(
-                driver
-            )
+        # 4. Aba URA
+        executar_etapa(
+            "ura_tab_error",
+            "open_ura",
+            abrir_ura,
+            driver,
         )
 
-        # 7. Abre reciclagem
-        clicar_reciclar(
+        # 5. Abrir todas as listas
+        executar_etapa(
+            "lists_open_error",
+            "open_all_lists",
+            abrir_todas_listas,
+            driver,
+        )
+
+        # 6. Localizar a lista mais atual
+        ultima_linha = executar_etapa(
+            "latest_list_error",
+            "select_latest_list",
+            clicar_opcoes_da_ultima_lista,
+            driver,
+        )
+
+        # 7. Abrir reciclagem
+        executar_etapa(
+            "recycle_open_error",
+            "open_recycle",
+            clicar_reciclar,
             driver,
             ultima_linha,
         )
 
-        # 8. Lê nome atual e gera REC + 1 | AUTO.R
-        nome_atual, novo_nome = (
-            obter_nome_atual_e_novo(
-                driver
-            )
+        # 8. Ler e gerar novo nome
+        nome_atual, novo_nome = executar_etapa(
+            "list_name_error",
+            "generate_list_name",
+            obter_nome_atual_e_novo,
+            driver,
         )
 
-        # 9. Marca as quatro boxes configuradas
-        marcar_boxes_reciclagem(driver)
+        # 9. Marcar checkboxes
+        executar_etapa(
+            "checkbox_error",
+            "mark_recycle_options",
+            marcar_boxes_reciclagem,
+            driver,
+        )
 
-        # 10. Preenche novo nome
-        preencher_novo_nome(
+        # 10. Preencher nome
+        executar_etapa(
+            "list_name_fill_error",
+            "fill_new_list_name",
+            preencher_novo_nome,
             driver,
             novo_nome,
         )
 
-        # 11. Confirma reciclagem
-        # Essa função já aguarda 5 segundos após o clique.
-        finalizar_reciclagem(driver)
+        # 11. Confirmar reciclagem
+        executar_etapa(
+            "recycle_confirm_error",
+            "confirm_recycle",
+            finalizar_reciclagem,
+            driver,
+        )
 
         log(
             "[CREDTU] Reciclagem concluída "
             "com sucesso."
         )
+
         log(
             f"[CREDTU] {nome_atual} "
             f"-> {novo_nome}"
         )
 
-        return True
+        return {
+            "ok": True,
+            "status": "success",
+            "campaign_id": campaign_id,
+            "nome_anterior": nome_atual,
+            "novo_nome": novo_nome,
+        }
 
-    except Exception:
-        # Salva evidência local para depuração.
-        # Nada disso é enviado ao n8n.
+    except CredtuAutomationError:
+        # Screenshot local para investigação.
         if driver is not None:
             tirar_print_debug(
                 driver,
@@ -673,9 +804,24 @@ def executar_reciclagem(campaign_id: str) -> bool:
 
         raise
 
+    except Exception as erro:
+        # Fallback para algum erro inesperado fora das etapas.
+        if driver is not None:
+            tirar_print_debug(
+                driver,
+                prefixo=(
+                    f"erro_campaign_"
+                    f"{campaign_id}"
+                ),
+            )
+
+        raise CredtuAutomationError(
+            status="unexpected_error",
+            stage="unknown",
+            original_error=erro,
+        ) from erro
+
     finally:
-        # Sempre fecha o Chrome no final,
-        # tanto em sucesso quanto em erro.
         if driver is not None:
             try:
                 driver.quit()
