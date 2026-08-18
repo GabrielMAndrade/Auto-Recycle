@@ -144,10 +144,11 @@ def normalizar_campaign_id(body: dict):
     Tenta obter o ID da campanha dos nomes mais prováveis
     enviados pelo n8n.
 
-    Preferência:
-      1. campaign_id
-      2. idCampanha
-      3. id_campanha
+    Campos aceitos:
+      1. campaign_id   (preferencial/correto)
+      2. campaing_id   (compatibilidade com typo)
+      3. idCampanha
+      4. id_campanha
 
     Depois:
       - converte para string;
@@ -180,7 +181,8 @@ def normalizar_campaign_id(body: dict):
     campo_recebido = None
 
     for campo in (
-        "campaign_id",
+        "campaign_id",   # correto
+        "campaing_id",   # tolerância ao typo comum do n8n
         "idCampanha",
         "id_campanha",
     ):
@@ -374,6 +376,12 @@ async def recycle(
     log(
         f"[DEBUG API] BODY: {body!r}"
     )
+
+    if isinstance(body, dict):
+        log(
+            f"[DEBUG API] CHAVES RECEBIDAS: "
+            f"{list(body.keys())!r}"
+        )
     log(
         f"[DEBUG API] TIPO BODY: "
         f"{type(body).__name__}"
