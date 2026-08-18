@@ -22,7 +22,7 @@ def criar_driver():
     """
     options = Options()
 
-    headless = _env_bool("HEADLESS", False)
+    headless = _env_bool("HEADLESS", True)
 
     if headless:
         options.add_argument("--headless=new")
