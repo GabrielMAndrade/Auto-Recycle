@@ -444,38 +444,17 @@ def fechar_janela_exclusao_se_aparecer(driver):
 def clicar_reciclar(driver, ultima_linha):
     log("[CREDTU] Abrindo reciclagem da última lista...")
 
-    def localizar_botao_reciclar(d):
-        try:
-            linhas = obter_linhas_visiveis(d)
-
-            if not linhas:
-                return False
-
-            linha_atual = linhas[-1]
-
-            botao = linha_atual.find_element(
-                By.XPATH,
-                "./td[10]/div/div/div/div[1]/button",
-            )
-
-            if botao.is_displayed() and botao.is_enabled():
-                return botao
-
-        except StaleElementReferenceException:
-            return False
-
-        except Exception:
-            return False
-
-        return False
-
     try:
         botao_reciclar = WebDriverWait(
             driver,
             5,
             poll_frequency=0.1,
-            ignored_exceptions=(StaleElementReferenceException,),
-        ).until(localizar_botao_reciclar)
+        ).until(
+            lambda d: ultima_linha.find_element(
+                By.XPATH,
+                "./td[10]/div/div/div/div[1]/button",
+            )
+        )
 
         clicar(driver, botao_reciclar)
 
@@ -523,8 +502,9 @@ def gerar_nome_proxima_reciclagem(nome_atual: str) -> str:
     )
 
     if not match:
-        novo_nome = f"REC1 - {nome_base}".strip()
-        return f"{novo_nome} | AUTO.R"
+        raise RuntimeError(
+            f"Não encontrei o número REC no nome da lista: {nome_atual!r}"
+        )
 
     numero_atual = int(match.group(1))
     proximo_numero = numero_atual + 1
