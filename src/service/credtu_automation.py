@@ -444,17 +444,38 @@ def fechar_janela_exclusao_se_aparecer(driver):
 def clicar_reciclar(driver, ultima_linha):
     log("[CREDTU] Abrindo reciclagem da última lista...")
 
+    def localizar_botao_reciclar(d):
+        try:
+            linhas = obter_linhas_visiveis(d)
+
+            if not linhas:
+                return False
+
+            linha_atual = linhas[-1]
+
+            botao = linha_atual.find_element(
+                By.XPATH,
+                "./td[10]/div/div/div/div[1]/button",
+            )
+
+            if botao.is_displayed() and botao.is_enabled():
+                return botao
+
+        except StaleElementReferenceException:
+            return False
+
+        except Exception:
+            return False
+
+        return False
+
     try:
         botao_reciclar = WebDriverWait(
             driver,
             5,
             poll_frequency=0.1,
-        ).until(
-            lambda d: ultima_linha.find_element(
-                By.XPATH,
-                "./td[10]/div/div/div/div[1]/button",
-            )
-        )
+            ignored_exceptions=(StaleElementReferenceException,),
+        ).until(localizar_botao_reciclar)
 
         clicar(driver, botao_reciclar)
 
