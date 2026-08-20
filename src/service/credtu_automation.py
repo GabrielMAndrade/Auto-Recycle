@@ -502,9 +502,8 @@ def gerar_nome_proxima_reciclagem(nome_atual: str) -> str:
     )
 
     if not match:
-        raise RuntimeError(
-            f"Não encontrei o número REC no nome da lista: {nome_atual!r}"
-        )
+        novo_nome = f"REC1 - {nome_base}".strip()
+        return f"{novo_nome} | AUTO.R"
 
     numero_atual = int(match.group(1))
     proximo_numero = numero_atual + 1
