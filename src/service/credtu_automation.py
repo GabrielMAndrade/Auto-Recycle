@@ -282,25 +282,10 @@ def fazer_login(driver):
     log("[CREDTU] Abrindo tela de login...")
     driver.get(LOGIN_URL)
 
-    WebDriverWait(
-        driver,
-        _timeout(),
-        poll_frequency=0.2,
-    ).until(
-        lambda d: d.execute_script("return document.readyState") == "complete"
-    )
-
     try:
-        campo_email = esperar_clicavel(driver, XPATH_EMAIL, timeout=20)
+        campo_email = esperar_clicavel(driver, XPATH_EMAIL, timeout=10)
     except TimeoutException:
-        # Se ainda estamos em /login, não é uma sessão válida: o campo não carregou.
-        # Antes o código assumia que já estava logado e o erro aparecia depois como
-        # ura_tab_error, escondendo a causa real.
-        if "/login" in str(driver.current_url).lower():
-            raise RuntimeError(
-                "A página de login abriu, mas o campo de e-mail não ficou disponível."
-            )
-
+        # Caso futuramente seja usado um perfil persistente e já esteja logado.
         log("[CREDTU] Tela de login não apareceu; seguindo com a sessão atual.")
         return
 
@@ -318,18 +303,10 @@ def fazer_login(driver):
         driver,
         _timeout(),
         poll_frequency=0.2,
-    ).until(lambda d: "/login" not in str(d.current_url).lower())
+    ).until(lambda d: "/login" not in str(d.current_url))
 
-    WebDriverWait(
-        driver,
-        _timeout(),
-        poll_frequency=0.2,
-    ).until(
-        lambda d: d.execute_script("return document.readyState") == "complete"
-    )
-
-    time.sleep(2)
     log("[CREDTU] Login concluído.")
+
 
 def abrir_campanha(driver, campaign_id: str):
     url = f"https://credtuasset.3c.plus/manager/campaign/{campaign_id}"
@@ -342,207 +319,22 @@ def abrir_campanha(driver, campaign_id: str):
         _timeout(),
         poll_frequency=0.2,
     ).until(
-        lambda d: d.execute_script("return document.readyState") == "complete"
+        lambda d: f"/manager/campaign/{campaign_id}" in str(d.current_url)
     )
-
-    # Aguarda a navegação estabilizar. Se a sessão tiver expirado e houver
-    # redirecionamento para login, reportamos aqui em vez de deixar virar ura_tab_error.
-    time.sleep(2)
-
-    url_atual = str(driver.current_url)
-
-    if "/login" in url_atual.lower():
-        raise RuntimeError(
-            "A sessão da Credtu não permaneceu autenticada ao abrir a campanha."
-        )
-
-    if f"/manager/campaign/{campaign_id}" not in url_atual:
-        raise RuntimeError(
-            f"A campanha não abriu na URL esperada. URL atual: {url_atual}"
-        )
-
-    log("[CREDTU] Campanha aberta. Aguardando renderização da interface...")
-    time.sleep(5)
-
-def _localizar_aba_ura(driver):
-    """
-    Localiza a aba URA usando o XPath conhecido e seletores de fallback.
-    O XPath principal continua sendo o mesmo validado localmente.
-    """
-    xpaths = [
-        XPATH_ABA_URA,
-        (
-            "//button[normalize-space(translate(., "
-            "'abcdefghijklmnopqrstuvwxyz', "
-            "'ABCDEFGHIJKLMNOPQRSTUVWXYZ'))='URA']"
-        ),
-        (
-            "//*[@role='tab' and "
-            "normalize-space(translate(., "
-            "'abcdefghijklmnopqrstuvwxyz', "
-            "'ABCDEFGHIJKLMNOPQRSTUVWXYZ'))='URA']"
-        ),
-        (
-            "//button[contains(" 
-            "normalize-space(translate(., "
-            "'abcdefghijklmnopqrstuvwxyz', "
-            "'ABCDEFGHIJKLMNOPQRSTUVWXYZ')), 'URA')]"
-        ),
-    ]
-
-    for xpath in xpaths:
-        try:
-            elementos = driver.find_elements(By.XPATH, xpath)
-        except Exception:
-            continue
-
-        for elemento in elementos:
-            try:
-                if elemento.is_displayed() and elemento.is_enabled():
-                    return elemento
-            except StaleElementReferenceException:
-                continue
-
-    return False
-
-
-def _estado_pagina(driver):
-    try:
-        url = str(driver.current_url)
-    except Exception:
-        url = "indisponível"
-
-    try:
-        titulo = str(driver.title)
-    except Exception:
-        titulo = "indisponível"
-
-    try:
-        ready_state = str(
-            driver.execute_script("return document.readyState")
-        )
-    except Exception:
-        ready_state = "indisponível"
-
-    return url, titulo, ready_state
 
 
 def abrir_ura(driver):
-    log("[CREDTU] Aguardando aba URA ficar disponível...")
-
-    try:
-        driver.switch_to.default_content()
-    except Exception:
-        pass
-
-    def localizar(d):
-        try:
-            return _localizar_aba_ura(d)
-        except StaleElementReferenceException:
-            return False
-        except Exception:
-            return False
-
-    try:
-        botao_ura = WebDriverWait(
-            driver,
-            45,
-            poll_frequency=0.25,
-            ignored_exceptions=(StaleElementReferenceException,),
-        ).until(localizar)
-
-    except TimeoutException:
-        # Em headless a aplicação pode terminar o HTML antes de concluir a
-        # hidratação do frontend. Uma atualização única resolve esse estado
-        # sem repetir indefinidamente a execução.
-        url, titulo, ready_state = _estado_pagina(driver)
-        log(
-            "[CREDTU] Aba URA não apareceu na primeira tentativa. "
-            f"URL={url} | título={titulo!r} | readyState={ready_state}. "
-            "Atualizando a campanha uma vez..."
-        )
-
-        driver.refresh()
-
-        WebDriverWait(
-            driver,
-            _timeout(),
-            poll_frequency=0.2,
-        ).until(
-            lambda d: d.execute_script("return document.readyState") == "complete"
-        )
-
-        time.sleep(5)
-
-        try:
-            driver.switch_to.default_content()
-        except Exception:
-            pass
-
-        try:
-            botao_ura = WebDriverWait(
-                driver,
-                30,
-                poll_frequency=0.25,
-                ignored_exceptions=(StaleElementReferenceException,),
-            ).until(localizar)
-
-        except TimeoutException as erro:
-            url, titulo, ready_state = _estado_pagina(driver)
-
-            try:
-                quantidade_xpath = len(
-                    driver.find_elements(By.XPATH, XPATH_ABA_URA)
-                )
-            except Exception:
-                quantidade_xpath = -1
-
-            raise RuntimeError(
-                "A aba URA não foi encontrada na VPS mesmo após refresh. "
-                f"URL={url}; título={titulo!r}; "
-                f"readyState={ready_state}; "
-                f"elementos_xpath_principal={quantidade_xpath}."
-            ) from erro
-
-    log("[CREDTU] Aba URA encontrada. Clicando...")
-    clicar(driver, botao_ura)
-
-    # Em vez de depender apenas de sleep, espera o conteúdo da aba URA existir.
-    WebDriverWait(
-        driver,
-        30,
-        poll_frequency=0.25,
-        ignored_exceptions=(StaleElementReferenceException,),
-    ).until(
-        lambda d: bool(
-            d.find_elements(By.XPATH, XPATH_ABRIR_TODAS_LISTAS_URA)
-        )
-    )
-
-    log("[CREDTU] Aba URA aberta.")
+    log("[CREDTU] Abrindo aba URA...")
+    clicar(driver, esperar_clicavel(driver, XPATH_ABA_URA))
 
 
 def abrir_todas_listas(driver):
-    log("[CREDTU] Aguardando botão para mostrar todas as listas de URA...")
-
-    botao_listas = esperar_clicavel(
+    log("[CREDTU] Abrindo todas as listas de URA...")
+    clicar(
         driver,
-        XPATH_ABRIR_TODAS_LISTAS_URA,
-        timeout=45,
+        esperar_clicavel(driver, XPATH_ABRIR_TODAS_LISTAS_URA),
     )
 
-    log("[CREDTU] Botão de listas encontrado. Clicando...")
-    clicar(driver, botao_listas)
-
-    # A etapa seguinte depende da tabela; esperamos a tabela em vez de avançar
-    # somente por tempo fixo.
-    esperar_elemento(
-        driver,
-        XPATH_TBODY_LISTAS,
-        timeout=45,
-    )
-
-    log("[CREDTU] Todas as listas de URA carregadas.")
 
 def obter_linhas_visiveis(driver):
     tbody = esperar_elemento(driver, XPATH_TBODY_LISTAS)
@@ -845,36 +637,6 @@ def finalizar_reciclagem(driver):
     time.sleep(_sleep_final())
 
 
-def salvar_html_debug(driver, prefixo="erro"):
-    """
-    Salva o HTML que o Chrome está vendo para diagnóstico na VPS.
-    """
-    try:
-        raiz_projeto = os.path.dirname(
-            os.path.dirname(
-                os.path.dirname(os.path.abspath(__file__))
-            )
-        )
-        pasta = os.path.join(raiz_projeto, "screenshots")
-        os.makedirs(pasta, exist_ok=True)
-
-        agora = time.strftime("%Y-%m-%d_%H-%M-%S")
-        caminho = os.path.join(
-            pasta,
-            f"{prefixo}_{agora}.html",
-        )
-
-        with open(caminho, "w", encoding="utf-8") as arquivo:
-            arquivo.write(driver.page_source)
-
-        log(f"[DEBUG] HTML salvo em: {caminho}")
-        return caminho
-
-    except Exception as erro:
-        log(f"[AVISO] Não consegui salvar HTML de debug: {erro}")
-        return None
-
-
 def executar_reciclagem(campaign_id: str) -> dict:
     """
     Executa toda a reciclagem e devolve um resultado estruturado.
@@ -1029,22 +791,15 @@ def executar_reciclagem(campaign_id: str) -> dict:
             "novo_nome": novo_nome,
         }
 
-    except CredtuAutomationError as erro:
-        # Screenshot + HTML para investigação. Em ura_tab_error o nome do arquivo
-        # deixa claro que a falha ocorreu antes de abrir a aba URA.
+    except CredtuAutomationError:
+        # Screenshot local para investigação.
         if driver is not None:
-            if erro.status == "ura_tab_error":
-                prefixo_debug = f"ura_tab_error_{campaign_id}"
-            else:
-                prefixo_debug = f"erro_campaign_{campaign_id}"
-
             tirar_print_debug(
                 driver,
-                prefixo=prefixo_debug,
-            )
-            salvar_html_debug(
-                driver,
-                prefixo=prefixo_debug,
+                prefixo=(
+                    f"erro_campaign_"
+                    f"{campaign_id}"
+                ),
             )
 
         raise
