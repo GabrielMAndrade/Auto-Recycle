@@ -322,18 +322,73 @@ def abrir_campanha(driver, campaign_id: str):
         lambda d: f"/manager/campaign/{campaign_id}" in str(d.current_url)
     )
 
+    log("[CREDTU] URL da campanha carregada. Aguardando o HTML finalizar...")
+
+    WebDriverWait(
+        driver,
+        _timeout(),
+        poll_frequency=0.2,
+    ).until(
+        lambda d: d.execute_script("return document.readyState") == "complete"
+    )
+
+    log("[CREDTU] HTML carregado. Aguardando renderização da interface...")
+    time.sleep(5)
+
 
 def abrir_ura(driver):
-    log("[CREDTU] Abrindo aba URA...")
-    clicar(driver, esperar_clicavel(driver, XPATH_ABA_URA))
+    log("[CREDTU] Aguardando aba URA ficar disponível...")
+
+    try:
+        botao_ura = esperar_clicavel(
+            driver,
+            XPATH_ABA_URA,
+            timeout=45,
+        )
+
+    except TimeoutException:
+        log(
+            "[CREDTU] XPath principal da aba URA não ficou clicável. "
+            "Tentando localizar a aba pelo texto..."
+        )
+
+        xpath_fallback_ura = (
+            "//button[normalize-space(translate(., "
+            "'abcdefghijklmnopqrstuvwxyz', "
+            "'ABCDEFGHIJKLMNOPQRSTUVWXYZ'))='URA']"
+        )
+
+        botao_ura = esperar_clicavel(
+            driver,
+            xpath_fallback_ura,
+            timeout=15,
+        )
+
+    log("[CREDTU] Aba URA encontrada. Clicando...")
+    clicar(driver, botao_ura)
+
+    log("[CREDTU] Aba URA clicada. Aguardando renderização...")
+    time.sleep(3)
 
 
 def abrir_todas_listas(driver):
-    log("[CREDTU] Abrindo todas as listas de URA...")
+    log("[CREDTU] Aguardando botão para mostrar todas as listas de URA...")
+
+    botao_listas = esperar_clicavel(
+        driver,
+        XPATH_ABRIR_TODAS_LISTAS_URA,
+        timeout=45,
+    )
+
+    log("[CREDTU] Botão de listas encontrado. Clicando...")
+
     clicar(
         driver,
-        esperar_clicavel(driver, XPATH_ABRIR_TODAS_LISTAS_URA),
+        botao_listas,
     )
+
+    log("[CREDTU] Aguardando tabela de listas renderizar...")
+    time.sleep(3)
 
 
 def obter_linhas_visiveis(driver):
