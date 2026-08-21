@@ -116,13 +116,11 @@ XPATH_BOTAO_ENTRAR = (
 # =========================================================
 
 XPATH_ABA_URA = (
-    "/html/body/div[1]/div[2]/div[1]/div[2]/div/div[2]/"
-    "div/div/div[1]/ul/li[2]/button"
+    "/html/body/div[1]/div[2]/div[1]/div[2]/div/div[2]/div/div/div[1]/ul/li[2]/button"
 )
 
 XPATH_ABRIR_TODAS_LISTAS_URA = (
-    "/html/body/div[1]/div[2]/div[1]/div[2]/div/div[2]/"
-    "div/div/div[2]/button"
+    "/html/body/div[1]/div[2]/div[1]/div[2]/div/div[2]/div/div/div[2]/button"
 )
 
 XPATH_TBODY_LISTAS = (
