@@ -192,17 +192,47 @@ def _sleep_final():
     return float(os.getenv("RECYCLE_SLEEP_SECONDS", "5"))
 
 
-def esperar_elemento(driver, xpath, timeout=None, exigir_visivel=True):
+def _sleep_pagina():
+    return float(os.getenv("PAGE_LOAD_WAIT_SECONDS", "3"))
+
+
+def esperar_pagina_carregar(driver):
+    WebDriverWait(
+        driver,
+        _timeout(),
+        poll_frequency=0.2,
+    ).until(
+        lambda d: d.execute_script(
+            "return document.readyState"
+        ) == "complete"
+    )
+
+    time.sleep(_sleep_pagina())
+
+
+def esperar_elemento(
+    driver,
+    xpath,
+    timeout=None,
+    exigir_visivel=True,
+):
     timeout = timeout or _timeout()
 
     def localizar(d):
         try:
-            elementos = d.find_elements(By.XPATH, xpath)
+            elementos = d.find_elements(
+                By.XPATH,
+                xpath,
+            )
 
             for elemento in elementos:
                 try:
-                    if not exigir_visivel or elemento.is_displayed():
+                    if (
+                        not exigir_visivel
+                        or elemento.is_displayed()
+                    ):
                         return elemento
+
                 except StaleElementReferenceException:
                     continue
 
@@ -215,21 +245,34 @@ def esperar_elemento(driver, xpath, timeout=None, exigir_visivel=True):
         driver,
         timeout,
         poll_frequency=0.1,
-        ignored_exceptions=(StaleElementReferenceException,),
+        ignored_exceptions=(
+            StaleElementReferenceException,
+        ),
     ).until(localizar)
 
 
-def esperar_clicavel(driver, xpath, timeout=None):
+def esperar_clicavel(
+    driver,
+    xpath,
+    timeout=None,
+):
     timeout = timeout or _timeout()
 
     def localizar(d):
         try:
-            elementos = d.find_elements(By.XPATH, xpath)
+            elementos = d.find_elements(
+                By.XPATH,
+                xpath,
+            )
 
             for elemento in elementos:
                 try:
-                    if elemento.is_displayed() and elemento.is_enabled():
+                    if (
+                        elemento.is_displayed()
+                        and elemento.is_enabled()
+                    ):
                         return elemento
+
                 except StaleElementReferenceException:
                     continue
 
@@ -242,23 +285,32 @@ def esperar_clicavel(driver, xpath, timeout=None):
         driver,
         timeout,
         poll_frequency=0.1,
-        ignored_exceptions=(StaleElementReferenceException,),
+        ignored_exceptions=(
+            StaleElementReferenceException,
+        ),
     ).until(localizar)
 
 
 def clicar(driver, elemento):
     try:
         driver.execute_script(
-            "arguments[0].scrollIntoView({block:'center', inline:'center'});",
+            "arguments[0].scrollIntoView("
+            "{block:'center', inline:'center'}"
+            ");",
             elemento,
         )
+
     except Exception:
         pass
 
     try:
         elemento.click()
+
     except Exception:
-        driver.execute_script("arguments[0].click();", elemento)
+        driver.execute_script(
+            "arguments[0].click();",
+            elemento,
+        )
 
 
 def texto_elemento(elemento):
@@ -271,47 +323,92 @@ def texto_elemento(elemento):
 
 
 def fazer_login(driver):
-    email = str(os.getenv("CREDTU_EMAIL", "")).strip()
-    senha = str(os.getenv("CREDTU_PASSWORD", "")).strip()
+    email = str(
+        os.getenv(
+            "CREDTU_EMAIL",
+            "",
+        )
+    ).strip()
+
+    senha = str(
+        os.getenv(
+            "CREDTU_PASSWORD",
+            "",
+        )
+    ).strip()
 
     if not email or not senha:
         raise RuntimeError(
-            "CREDTU_EMAIL e CREDTU_PASSWORD precisam estar preenchidos no .env."
+            "CREDTU_EMAIL e CREDTU_PASSWORD "
+            "precisam estar preenchidos no .env."
         )
 
     log("[CREDTU] Abrindo tela de login...")
+
     driver.get(LOGIN_URL)
 
     try:
-        campo_email = esperar_clicavel(driver, XPATH_EMAIL, timeout=10)
+        campo_email = esperar_clicavel(
+            driver,
+            XPATH_EMAIL,
+            timeout=10,
+        )
+
     except TimeoutException:
-        # Caso futuramente seja usado um perfil persistente e já esteja logado.
-        log("[CREDTU] Tela de login não apareceu; seguindo com a sessão atual.")
+        log(
+            "[CREDTU] Tela de login não apareceu; "
+            "seguindo com a sessão atual."
+        )
+
         return
 
     campo_email.clear()
     campo_email.send_keys(email)
 
-    campo_senha = esperar_clicavel(driver, XPATH_SENHA)
+    campo_senha = esperar_clicavel(
+        driver,
+        XPATH_SENHA,
+    )
+
     campo_senha.clear()
     campo_senha.send_keys(senha)
 
-    botao_entrar = esperar_clicavel(driver, XPATH_BOTAO_ENTRAR)
-    clicar(driver, botao_entrar)
+    botao_entrar = esperar_clicavel(
+        driver,
+        XPATH_BOTAO_ENTRAR,
+    )
+
+    clicar(
+        driver,
+        botao_entrar,
+    )
 
     WebDriverWait(
         driver,
         _timeout(),
         poll_frequency=0.2,
-    ).until(lambda d: "/login" not in str(d.current_url))
+    ).until(
+        lambda d: "/login"
+        not in str(d.current_url)
+    )
 
     log("[CREDTU] Login concluído.")
 
 
-def abrir_campanha(driver, campaign_id: str):
-    url = f"https://credtuasset.3c.plus/manager/campaign/{campaign_id}"
+def abrir_campanha(
+    driver,
+    campaign_id: str,
+):
+    url = (
+        f"https://credtuasset.3c.plus/"
+        f"manager/campaign/{campaign_id}"
+    )
 
-    log(f"[CREDTU] Abrindo campanha {campaign_id}...")
+    log(
+        f"[CREDTU] Abrindo campanha "
+        f"{campaign_id}..."
+    )
+
     driver.get(url)
 
     WebDriverWait(
@@ -319,31 +416,90 @@ def abrir_campanha(driver, campaign_id: str):
         _timeout(),
         poll_frequency=0.2,
     ).until(
-        lambda d: f"/manager/campaign/{campaign_id}" in str(d.current_url)
+        lambda d:
+        f"/manager/campaign/{campaign_id}"
+        in str(d.current_url)
+    )
+
+    log(
+        "[CREDTU] Aguardando carregamento "
+        "completo da campanha..."
+    )
+
+    esperar_pagina_carregar(driver)
+
+    log(
+        "[CREDTU] Página da campanha carregada."
     )
 
 
 def abrir_ura(driver):
+    log(
+        "[CREDTU] Aguardando aba URA "
+        "ficar disponível..."
+    )
+
+    botao_ura = esperar_clicavel(
+        driver,
+        XPATH_ABA_URA,
+        timeout=_timeout(),
+    )
+
     log("[CREDTU] Abrindo aba URA...")
-    clicar(driver, esperar_clicavel(driver, XPATH_ABA_URA))
+
+    clicar(
+        driver,
+        botao_ura,
+    )
+
+    time.sleep(
+        _sleep_pagina()
+    )
 
 
 def abrir_todas_listas(driver):
-    log("[CREDTU] Abrindo todas as listas de URA...")
+    log(
+        "[CREDTU] Aguardando botão de "
+        "todas as listas de URA..."
+    )
+
+    botao_listas = esperar_clicavel(
+        driver,
+        XPATH_ABRIR_TODAS_LISTAS_URA,
+        timeout=_timeout(),
+    )
+
+    log(
+        "[CREDTU] Abrindo todas "
+        "as listas de URA..."
+    )
+
     clicar(
         driver,
-        esperar_clicavel(driver, XPATH_ABRIR_TODAS_LISTAS_URA),
+        botao_listas,
+    )
+
+    time.sleep(
+        _sleep_pagina()
     )
 
 
 def obter_linhas_visiveis(driver):
-    tbody = esperar_elemento(driver, XPATH_TBODY_LISTAS)
+    tbody = esperar_elemento(
+        driver,
+        XPATH_TBODY_LISTAS,
+    )
+
     linhas = []
 
-    for linha in tbody.find_elements(By.XPATH, "./tr"):
+    for linha in tbody.find_elements(
+        By.XPATH,
+        "./tr",
+    ):
         try:
             if linha.is_displayed():
                 linhas.append(linha)
+
         except StaleElementReferenceException:
             continue
 
@@ -355,7 +511,12 @@ def esperar_listas(driver):
         driver,
         _timeout(),
         poll_frequency=0.2,
-    ).until(lambda d: len(obter_linhas_visiveis(d)) > 0)
+    ).until(
+        lambda d:
+        len(
+            obter_linhas_visiveis(d)
+        ) > 0
+    )
 
 
 def clicar_opcoes_da_ultima_lista(driver):
@@ -364,71 +525,116 @@ def clicar_opcoes_da_ultima_lista(driver):
     linhas = obter_linhas_visiveis(driver)
 
     if not linhas:
-        raise RuntimeError("Nenhuma lista de URA foi encontrada.")
+        raise RuntimeError(
+            "Nenhuma lista de URA foi encontrada."
+        )
 
     ultima_linha = linhas[-1]
 
     log(
         f"[CREDTU] {len(linhas)} listas visíveis. "
-        "Selecionando a última, que é a mais atual."
+        "Selecionando a última, "
+        "que é a mais atual."
     )
 
     try:
         texto = " | ".join(
             parte.strip()
-            for parte in ultima_linha.text.splitlines()
+            for parte
+            in ultima_linha.text.splitlines()
             if parte.strip()
         )
-        log(f"[CREDTU] Última lista: {texto[:300]}")
+
+        log(
+            f"[CREDTU] Última lista: "
+            f"{texto[:300]}"
+        )
+
     except Exception:
         pass
 
-    celula_opcoes = ultima_linha.find_element(By.XPATH, "./td[10]")
+    celula_opcoes = (
+        ultima_linha.find_element(
+            By.XPATH,
+            "./td[10]",
+        )
+    )
 
     driver.execute_script(
-        "arguments[0].scrollIntoView({block:'center', inline:'center'});",
+        "arguments[0].scrollIntoView("
+        "{block:'center', inline:'center'}"
+        ");",
         celula_opcoes,
     )
 
-    botoes = celula_opcoes.find_elements(By.XPATH, ".//button")
-    botao_opcoes = botoes[-1] if botoes else celula_opcoes
+    botoes = (
+        celula_opcoes.find_elements(
+            By.XPATH,
+            ".//button",
+        )
+    )
 
-    clicar(driver, botao_opcoes)
+    botao_opcoes = (
+        botoes[-1]
+        if botoes
+        else celula_opcoes
+    )
+
+    clicar(
+        driver,
+        botao_opcoes,
+    )
 
     return ultima_linha
 
 
-def fechar_janela_exclusao_se_aparecer(driver):
+def fechar_janela_exclusao_se_aparecer(
+    driver,
+):
     try:
         botao_fechar = WebDriverWait(
             driver,
             2,
             poll_frequency=0.05,
         ).until(
-            lambda d: next(
+            lambda d:
+            next(
                 (
                     el
-                    for el in d.find_elements(
+                    for el
+                    in d.find_elements(
                         By.XPATH,
                         XPATH_FECHAR_JANELA_EXCLUSAO,
                     )
-                    if el.is_displayed() and el.is_enabled()
+                    if (
+                        el.is_displayed()
+                        and el.is_enabled()
+                    )
                 ),
                 False,
             )
         )
 
-        log("[CREDTU] Janela de exclusão detectada. Fechando...")
-        clicar(driver, botao_fechar)
+        log(
+            "[CREDTU] Janela de exclusão "
+            "detectada. Fechando..."
+        )
+
+        clicar(
+            driver,
+            botao_fechar,
+        )
 
         WebDriverWait(
             driver,
             5,
             poll_frequency=0.05,
         ).until(
-            lambda d: not any(
+            lambda d:
+            not any(
                 el.is_displayed()
-                for el in d.find_elements(
+                for el
+                in d.find_elements(
                     By.XPATH,
                     XPATH_FECHAR_JANELA_EXCLUSAO,
                 )
@@ -441,8 +647,14 @@ def fechar_janela_exclusao_se_aparecer(driver):
         return False
 
 
-def clicar_reciclar(driver, ultima_linha):
-    log("[CREDTU] Abrindo reciclagem da última lista...")
+def clicar_reciclar(
+    driver,
+    ultima_linha,
+):
+    log(
+        "[CREDTU] Abrindo reciclagem "
+        "da última lista..."
+    )
 
     try:
         botao_reciclar = WebDriverWait(
@@ -450,29 +662,42 @@ def clicar_reciclar(driver, ultima_linha):
             5,
             poll_frequency=0.1,
         ).until(
-            lambda d: ultima_linha.find_element(
+            lambda d:
+            ultima_linha.find_element(
                 By.XPATH,
-                "./td[10]/div/div/div/div[1]/button",
+                "./td[10]/div/div/div/"
+                "div[1]/button",
             )
         )
 
-        clicar(driver, botao_reciclar)
+        clicar(
+            driver,
+            botao_reciclar,
+        )
 
     except Exception:
         xpath_fallback = (
             "//button[contains("
             "translate(normalize-space(.),"
-            "'ABCDEFGHIJKLMNOPQRSTUVWXYZÁÀÂÃÉÊÍÓÔÕÚÇ',"
-            "'abcdefghijklmnopqrstuvwxyzáàâãéêíóôõúç'),"
+            "'ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            "ÁÀÂÃÉÊÍÓÔÕÚÇ',"
+            "'abcdefghijklmnopqrstuvwxyz"
+            "áàâãéêíóôõúç'),"
             "'reciclar')]"
         )
 
         clicar(
             driver,
-            esperar_clicavel(driver, xpath_fallback, timeout=10),
+            esperar_clicavel(
+                driver,
+                xpath_fallback,
+                timeout=10,
+            ),
         )
 
-    fechar_janela_exclusao_se_aparecer(driver)
+    fechar_janela_exclusao_se_aparecer(
+        driver
+    )
 
     esperar_elemento(
         driver,
@@ -481,13 +706,20 @@ def clicar_reciclar(driver, ultima_linha):
     )
 
 
-def gerar_nome_proxima_reciclagem(nome_atual: str) -> str:
-    nome = str(nome_atual or "").strip()
+def gerar_nome_proxima_reciclagem(
+    nome_atual: str,
+) -> str:
+    nome = str(
+        nome_atual or ""
+    ).strip()
 
     if not nome:
-        raise RuntimeError("O nome atual da lista está vazio.")
+        raise RuntimeError(
+            "O nome atual da lista está vazio."
+        )
 
-    # Remove AUTO.R anterior para não duplicar em novas reciclagens.
+    # Remove AUTO.R anterior para não
+    # duplicar em novas reciclagens.
     nome_base = re.sub(
         r"\s*\|\s*AUTO\.R\s*$",
         "",
@@ -503,11 +735,18 @@ def gerar_nome_proxima_reciclagem(nome_atual: str) -> str:
 
     if not match:
         raise RuntimeError(
-            f"Não encontrei o número REC no nome da lista: {nome_atual!r}"
+            f"Não encontrei o número REC "
+            f"no nome da lista: "
+            f"{nome_atual!r}"
         )
 
-    numero_atual = int(match.group(1))
-    proximo_numero = numero_atual + 1
+    numero_atual = int(
+        match.group(1)
+    )
+
+    proximo_numero = (
+        numero_atual + 1
+    )
 
     novo_nome = (
         nome_base[:match.start()]
@@ -515,7 +754,9 @@ def gerar_nome_proxima_reciclagem(nome_atual: str) -> str:
         + nome_base[match.end():]
     ).strip()
 
-    return f"{novo_nome} | AUTO.R"
+    return (
+        f"{novo_nome} | AUTO.R"
+    )
 
 
 def obter_nome_atual_e_novo(driver):
@@ -525,38 +766,67 @@ def obter_nome_atual_e_novo(driver):
         timeout=_timeout(),
     )
 
-    nome_atual = texto_elemento(elemento)
+    nome_atual = texto_elemento(
+        elemento
+    )
 
     if not nome_atual:
-        raise RuntimeError("Não consegui ler o nome atual da lista.")
+        raise RuntimeError(
+            "Não consegui ler "
+            "o nome atual da lista."
+        )
 
-    novo_nome = gerar_nome_proxima_reciclagem(nome_atual)
+    novo_nome = (
+        gerar_nome_proxima_reciclagem(
+            nome_atual
+        )
+    )
 
-    log(f"[CREDTU] Nome atual: {nome_atual}")
-    log(f"[CREDTU] Novo nome:  {novo_nome}")
+    log(
+        f"[CREDTU] Nome atual: "
+        f"{nome_atual}"
+    )
 
-    return nome_atual, novo_nome
+    log(
+        f"[CREDTU] Novo nome:  "
+        f"{novo_nome}"
+    )
+
+    return (
+        nome_atual,
+        novo_nome,
+    )
 
 
-def checkbox_esta_marcado(driver, elemento):
+def checkbox_esta_marcado(
+    driver,
+    elemento,
+):
     try:
         if elemento.is_selected():
             return True
+
     except Exception:
         pass
 
     try:
         return bool(
             driver.execute_script(
-                "return arguments[0].checked === true;",
+                "return arguments[0].checked "
+                "=== true;",
                 elemento,
             )
         )
+
     except Exception:
         return False
 
 
-def marcar_checkbox(driver, nome, xpath):
+def marcar_checkbox(
+    driver,
+    nome,
+    xpath,
+):
     checkbox = esperar_elemento(
         driver,
         xpath,
@@ -564,38 +834,67 @@ def marcar_checkbox(driver, nome, xpath):
         exigir_visivel=False,
     )
 
-    if checkbox_esta_marcado(driver, checkbox):
-        log(f"[CREDTU] {nome} já estava marcado.")
+    if checkbox_esta_marcado(
+        driver,
+        checkbox,
+    ):
+        log(
+            f"[CREDTU] {nome} "
+            f"já estava marcado."
+        )
+
         return
 
     try:
         driver.execute_script(
-            "arguments[0].scrollIntoView({block:'center', inline:'center'});",
+            "arguments[0].scrollIntoView("
+            "{block:'center', inline:'center'}"
+            ");",
             checkbox,
         )
+
     except Exception:
         pass
 
     try:
         checkbox.click()
+
     except Exception:
-        driver.execute_script("arguments[0].click();", checkbox)
+        driver.execute_script(
+            "arguments[0].click();",
+            checkbox,
+        )
 
     WebDriverWait(
         driver,
         5,
         poll_frequency=0.05,
-    ).until(lambda d: checkbox_esta_marcado(d, checkbox))
+    ).until(
+        lambda d:
+        checkbox_esta_marcado(
+            d,
+            checkbox,
+        )
+    )
 
-    log(f"[CREDTU] {nome} marcado.")
+    log(
+        f"[CREDTU] {nome} marcado."
+    )
 
 
 def marcar_boxes_reciclagem(driver):
     for nome, xpath in CHECKBOXES_RECICLAGEM:
-        marcar_checkbox(driver, nome, xpath)
+        marcar_checkbox(
+            driver,
+            nome,
+            xpath,
+        )
 
 
-def preencher_novo_nome(driver, novo_nome):
+def preencher_novo_nome(
+    driver,
+    novo_nome,
+):
     campo = esperar_clicavel(
         driver,
         XPATH_CAMPO_NOVO_NOME,
@@ -603,23 +902,45 @@ def preencher_novo_nome(driver, novo_nome):
     )
 
     campo.click()
-    campo.send_keys(Keys.CONTROL, "a")
-    campo.send_keys(Keys.BACKSPACE)
-    campo.send_keys(novo_nome)
+
+    campo.send_keys(
+        Keys.CONTROL,
+        "a",
+    )
+
+    campo.send_keys(
+        Keys.BACKSPACE
+    )
+
+    campo.send_keys(
+        novo_nome
+    )
 
     WebDriverWait(
         driver,
         5,
         poll_frequency=0.05,
     ).until(
-        lambda d: str(campo.get_attribute("value") or "").strip() == novo_nome
+        lambda d:
+        str(
+            campo.get_attribute(
+                "value"
+            )
+            or ""
+        ).strip()
+        == novo_nome
     )
 
-    log(f"[CREDTU] Novo nome preenchido: {novo_nome}")
+    log(
+        f"[CREDTU] Novo nome preenchido: "
+        f"{novo_nome}"
+    )
 
 
 def finalizar_reciclagem(driver):
-    log("[CREDTU] Confirmando reciclagem...")
+    log(
+        "[CREDTU] Confirmando reciclagem..."
+    )
 
     botao = esperar_clicavel(
         driver,
@@ -627,19 +948,28 @@ def finalizar_reciclagem(driver):
         timeout=_timeout(),
     )
 
-    clicar(driver, botao)
+    clicar(
+        driver,
+        botao,
+    )
 
     log(
         f"[CREDTU] Reciclagem confirmada. "
-        f"Aguardando {_sleep_final():g}s antes de fechar o Chrome..."
+        f"Aguardando {_sleep_final():g}s "
+        f"antes de fechar o Chrome..."
     )
 
-    time.sleep(_sleep_final())
+    time.sleep(
+        _sleep_final()
+    )
 
 
-def executar_reciclagem(campaign_id: str) -> dict:
+def executar_reciclagem(
+    campaign_id: str,
+) -> dict:
     """
-    Executa toda a reciclagem e devolve um resultado estruturado.
+    Executa toda a reciclagem e devolve
+    um resultado estruturado.
 
     Sucesso:
         {
@@ -667,7 +997,8 @@ def executar_reciclagem(campaign_id: str) -> dict:
             status="invalid_campaign_id",
             stage="validation",
             original_error=ValueError(
-                "campaign_id deve conter somente números."
+                "campaign_id deve conter "
+                "somente números."
             ),
         )
 
@@ -676,12 +1007,20 @@ def executar_reciclagem(campaign_id: str) -> dict:
     novo_nome = None
 
     try:
-        log("===================================================")
+        log(
+            "================================"
+            "==================="
+        )
+
         log(
             f" CREDTU AUTO RECICLAGEM | "
             f"CAMPANHA {campaign_id}"
         )
-        log("===================================================")
+
+        log(
+            "================================"
+            "==================="
+        )
 
         # 1. Chrome
         driver = executar_etapa(
@@ -792,7 +1131,6 @@ def executar_reciclagem(campaign_id: str) -> dict:
         }
 
     except CredtuAutomationError:
-        # Screenshot local para investigação.
         if driver is not None:
             tirar_print_debug(
                 driver,
@@ -805,7 +1143,6 @@ def executar_reciclagem(campaign_id: str) -> dict:
         raise
 
     except Exception as erro:
-        # Fallback para algum erro inesperado fora das etapas.
         if driver is not None:
             tirar_print_debug(
                 driver,
@@ -825,5 +1162,6 @@ def executar_reciclagem(campaign_id: str) -> dict:
         if driver is not None:
             try:
                 driver.quit()
+
             except Exception:
                 pass
